@@ -1,9 +1,86 @@
-import type { NextPage } from 'next'
-import Head from 'next/head'
-import Image from 'next/image'
-import styles from '../styles/Home.module.css'
+import type { NextPage, GetStaticProps, InferGetStaticPropsType } from "next";
+import Head from "next/head";
+import { useRef, useState } from "react";
+import { Collection, CollectionResponse } from "../interfaces/icyTools";
+import CollectionView from "../components/CollectionView";
+import styles from "../styles/Home.module.css";
 
-const Home: NextPage = () => {
+function shuffleArray(array: Collection[]) {
+  const copy = [...array];
+
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+export const getStaticProps: GetStaticProps = async () => {
+  const currencyRes = await fetch(
+    "https://api.coingecko.com/api/v3/coins/markets?vs_currency=cad&ids=ethereum"
+  );
+
+  const currencyData = await currencyRes.json();
+  const ethToCad: number = currencyData[0].current_price;
+
+  const collectionRes = await fetch("https://graphql.icy.tools/graphql", {
+    headers: {
+      accept: "*/*",
+      "accept-language": "en-US,en;q=0.9",
+      "content-type": "application/json",
+      "sec-ch-ua":
+        '" Not A;Brand";v="99", "Chromium";v="101", "Google Chrome";v="101"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "same-site",
+      "x-api-key": `${process.env.ICY_TOOLS_KEY}`,
+      Referer: "https://developers.icy.tools/",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+    },
+    body: '{"query":"\\n  query TrendingCollections {\\n    contracts(orderBy: SALES, orderDirection: DESC, first: 100) {\\n      edges {\\n        node {\\n          address\\n          ... on ERC721Contract {\\n            name\\n            stats {\\n              totalSales\\n              average\\n              ceiling\\n              floor\\n              volume\\n            }\\n            unsafeOpenseaImageUrl\\n            symbol\\n          }\\n        }\\n      }\\n    }\\n  }\\n  ","variables":{},"operationName":"TrendingCollections"}',
+    method: "POST",
+  });
+
+  const collectionData: CollectionResponse = await collectionRes.json();
+  const collections = collectionData.data.contracts.edges.filter(
+    (edge) => edge.node.unsafeOpenseaImageUrl !== undefined
+  );
+
+  return {
+    props: { ethToCad, collections }, // will be passed to the page component as props
+    revalidate: 86400, // 1 day
+  };
+};
+
+const Home: NextPage = ({
+  ethToCad,
+  collections,
+}: InferGetStaticPropsType<typeof getStaticProps>) => {
+  const [nftCollections, setNftColletions] = useState(collections);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const score = useRef(0);
+
+  const nftCollection = nftCollections[currentIndex];
+  const nftCollectionNext = nftCollections[currentIndex + 1];
+
+  function nextCollection() {
+    setCurrentIndex((index) => {
+      if (index === nftCollections.length - 2) return 0;
+      else return index + 1;
+    });
+  }
+
+  function guessPrice(higher: boolean) {
+    if (
+      nftCollectionNext.node.stats.average >
+        nftCollection.node.stats.average ===
+      higher
+    )
+      score.current = score.current + 1;
+  }
+
   return (
     <div className={styles.container}>
       <Head>
@@ -13,60 +90,54 @@ const Home: NextPage = () => {
       </Head>
 
       <main className={styles.main}>
-        <h1 className={styles.title}>
-          Welcome to <a href="https://nextjs.org">Next.js!</a>
-        </h1>
-
-        <p className={styles.description}>
-          Get started by editing{' '}
-          <code className={styles.code}>pages/index.tsx</code>
-        </p>
-
-        <div className={styles.grid}>
-          <a href="https://nextjs.org/docs" className={styles.card}>
-            <h2>Documentation &rarr;</h2>
-            <p>Find in-depth information about Next.js features and API.</p>
-          </a>
-
-          <a href="https://nextjs.org/learn" className={styles.card}>
-            <h2>Learn &rarr;</h2>
-            <p>Learn about Next.js in an interactive course with quizzes!</p>
-          </a>
-
-          <a
-            href="https://github.com/vercel/next.js/tree/canary/examples"
-            className={styles.card}
-          >
-            <h2>Examples &rarr;</h2>
-            <p>Discover and deploy boilerplate example Next.js projects.</p>
-          </a>
-
-          <a
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-          >
-            <h2>Deploy &rarr;</h2>
-            <p>
-              Instantly deploy your Next.js site to a public URL with Vercel.
-            </p>
-          </a>
-        </div>
-      </main>
-
-      <footer className={styles.footer}>
-        <a
-          href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          style={{ fontSize: "26px", margin: "1rem" }}
+          onClick={() => {
+            score.current = 0;
+            setNftColletions(shuffleArray(nftCollections));
+          }}
         >
-          Powered by{' '}
-          <span className={styles.logo}>
-            <Image src="/vercel.svg" alt="Vercel Logo" width={72} height={16} />
-          </span>
-        </a>
-      </footer>
+          Restart
+        </button>
+        <div style={{ display: "flex" }}>
+          <CollectionView collection={nftCollection} ethToCAD={ethToCad} />
+          <div style={{ width: "50px" }} />
+          <CollectionView
+            collection={nftCollectionNext}
+            ethToCAD={ethToCad}
+            showPrice={false}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            marginTop: "1rem",
+          }}
+        >
+          <button
+            style={{ fontSize: "26px", margin: "0.5rem" }}
+            onClick={() => {
+              guessPrice(true);
+              nextCollection();
+            }}
+          >
+            Higher
+          </button>
+          <button
+            style={{ fontSize: "26px", margin: "0.5rem" }}
+            onClick={() => {
+              guessPrice(false);
+              nextCollection();
+            }}
+          >
+            Lower
+          </button>
+        </div>
+        <h1>Score: {score.current}</h1>
+      </main>
     </div>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;

@@ -108,6 +108,20 @@
   margin-left: 0.5rem;
 }
 
+.animate {
+  position: relative;
+  animation: animateright 0.5s;
+}
+
+@keyframes animateright {
+  from {
+    right: -450px;
+  }
+  to {
+    right: 0;
+  }
+}
+
 @media (max-width: 600px) {
   .grid {
     width: 100%;
